@@ -1,0 +1,838 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>贪吃蛇大冒险</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(circle at top, #173c30, #07110e 65%);
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 25px 12px;
+}
+
+.container {
+    max-width: 680px;
+    margin: auto;
+}
+
+h1 {
+    color: #4ade80;
+    font-size: 34px;
+    text-shadow: 0 0 15px #22c55e;
+    margin-bottom: 8px;
+}
+
+.subtitle {
+    color: #9ca3af;
+    font-size: 14px;
+    margin-bottom: 25px;
+}
+
+.score-panel {
+    display: flex;
+    justify-content: space-around;
+    background: #10251d;
+    border: 1px solid #276749;
+    border-radius: 12px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+.score-box {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.score-label {
+    color: #9ca3af;
+    font-size: 13px;
+}
+
+.score-number {
+    color: #4ade80;
+    font-size: 26px;
+    font-weight: bold;
+}
+
+.game-area {
+    position: relative;
+    line-height: 0;
+}
+
+canvas {
+    width: 100%;
+    height: auto;
+    background: #07130f;
+    border: 2px solid #4ade80;
+    border-radius: 10px;
+    box-shadow: 0 0 25px #16a34a44;
+}
+
+.controls {
+    margin-top: 18px;
+}
+
+button, select {
+    border: 1px solid #4ade80;
+    border-radius: 8px;
+    padding: 12px 18px;
+    margin: 5px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+button {
+    background: #14532d;
+    color: white;
+}
+
+button:hover {
+    background: #16a34a;
+}
+
+.primary {
+    background: #4ade80;
+    color: #052e16;
+    font-weight: bold;
+}
+
+select {
+    background: #10251d;
+    color: white;
+}
+
+#message {
+    color: #facc15;
+    min-height: 24px;
+    font-size: 15px;
+    margin-top: 18px;
+}
+
+.tip {
+    color: #9ca3af;
+    font-size: 13px;
+    line-height: 1.8;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🐍 SNAKE GAME V2.0</h1>
+
+    <div class="subtitle">
+        贪吃蛇大冒险 · 我的第一款原创游戏
+    </div>
+
+    <div class="score-panel">
+
+        <div class="score-box">
+            <span class="score-label">当前分数</span>
+            <span class="score-number" id="score">0</span>
+        </div>
+
+        <div class="score-box">
+            <span class="score-label">历史最高分</span>
+            <span class="score-number" id="best">0</span>
+        </div>
+
+    </div>
+
+    <div class="game-area">
+        <canvas id="gameCanvas" width="600" height="400"></canvas>
+    </div>
+
+    <p id="message">点击开始游戏，开启冒险！</p>
+
+    <div class="controls">
+
+        <div>
+            <select id="difficulty">
+                <option value="250">简单模式</option>
+                <option value="150" selected>普通模式</option>
+                <option value="80">困难模式</option>
+            </select>
+        </div>
+
+        <div>
+            <button class="primary" id="startButton">开始游戏</button>
+            <button id="pauseButton">暂停游戏</button>
+            <button id="restartButton">重新开始</button>
+        </div>
+
+        <div>
+            <button id="soundButton">🔊 音效：开启</button>
+        </div>
+
+    </div>
+
+    <p class="tip">
+        ↑ ↓ ← → 控制方向<br>
+        空格键：暂停 / 继续<br>
+        吃到食物获得 10 分
+    </p>
+
+</div>
+
+
+<script>
+
+// =================================
+// 1. 获取网页元素
+// =================================
+
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const scoreText = document.getElementById("score");
+const bestText = document.getElementById("best");
+const message = document.getElementById("message");
+
+const difficulty = document.getElementById("difficulty");
+
+const startButton = document.getElementById("startButton");
+const pauseButton = document.getElementById("pauseButton");
+const restartButton = document.getElementById("restartButton");
+const soundButton = document.getElementById("soundButton");
+
+
+// =================================
+// 2. 游戏基础设置
+// =================================
+
+const gridSize = 20;
+const width = 600;
+const height = 400;
+
+let score = 0;
+
+let gameState = "menu";
+
+let bestScore = Number(
+    localStorage.getItem("snakeBest")
+) || 0;
+
+bestText.textContent = bestScore;
+
+let snake = [];
+
+let direction = "right";
+let nextDirection = "right";
+
+let food = { x: 400, y: 200 };
+
+let gameTimer = null;
+
+
+// =================================
+// 3. 音效系统
+// =================================
+
+let soundEnabled = true;
+
+let audioContext = null;
+
+function playSound(frequency, duration) {
+
+    if (!soundEnabled) return;
+
+    // 浏览器第一次播放声音前，需要用户交互
+    if (!audioContext) {
+        audioContext = new AudioContext();
+    }
+
+    if (audioContext.state === "suspended") {
+        audioContext.resume();
+    }
+
+    const oscillator = audioContext.createOscillator();
+
+    const gain = audioContext.createGain();
+
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+
+    oscillator.frequency.value = frequency;
+
+    oscillator.type = "square";
+
+    gain.gain.setValueAtTime(
+        0.12,
+        audioContext.currentTime
+    );
+
+    gain.gain.exponentialRampToValueAtTime(
+        0.001,
+        audioContext.currentTime + duration
+    );
+
+    oscillator.start();
+
+    oscillator.stop(
+        audioContext.currentTime + duration
+    );
+}
+
+
+// 吃到食物的声音
+function playEatSound() {
+    playSound(650, 0.12);
+}
+
+// 游戏结束的声音
+function playGameOverSound() {
+    playSound(180, 0.5);
+}
+
+
+// =================================
+// 4. 游戏初始化
+// =================================
+
+function resetGame() {
+
+    snake = [
+        { x: 200, y: 200 },
+        { x: 180, y: 200 },
+        { x: 160, y: 200 }
+    ];
+
+    direction = "right";
+    nextDirection = "right";
+
+    score = 0;
+
+    scoreText.textContent = score;
+
+    createFood();
+
+    drawGame();
+}
+
+
+// =================================
+// 5. 随机生成食物
+// =================================
+
+function createFood() {
+
+    do {
+
+        food = {
+            x: Math.floor(Math.random() * 30) * gridSize,
+            y: Math.floor(Math.random() * 20) * gridSize
+        };
+
+    } while (
+        snake.some(part =>
+            part.x === food.x &&
+            part.y === food.y
+        )
+    );
+}
+
+
+// =================================
+// 6. 绘制棋盘
+// =================================
+
+function drawGrid() {
+
+    ctx.fillStyle = "#07130f";
+
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.strokeStyle = "#163629";
+    ctx.lineWidth = 1;
+
+    for (let x = 0; x <= width; x += gridSize) {
+
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+
+    }
+
+    for (let y = 0; y <= height; y += gridSize) {
+
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+
+    }
+}
+
+
+// =================================
+// 7. 绘制蛇
+// =================================
+
+function drawSnake() {
+
+    snake.forEach(function(part, index) {
+
+        ctx.fillStyle = index === 0
+            ? "#86efac"
+            : "#22c55e";
+
+        ctx.shadowColor = "#4ade80";
+        ctx.shadowBlur = 8;
+
+        ctx.fillRect(
+            part.x + 2,
+            part.y + 2,
+            gridSize - 4,
+            gridSize - 4
+        );
+
+        ctx.shadowBlur = 0;
+
+    });
+}
+
+
+// =================================
+// 8. 绘制食物
+// =================================
+
+function drawFood() {
+
+    ctx.fillStyle = "#ef4444";
+
+    ctx.shadowColor = "#ef4444";
+    ctx.shadowBlur = 12;
+
+    ctx.beginPath();
+
+    ctx.arc(
+        food.x + 10,
+        food.y + 10,
+        8,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+}
+
+
+// =================================
+// 9. 绘制覆盖画面
+// =================================
+
+function drawOverlay(title, subtitle) {
+
+    ctx.fillStyle = "rgba(0,0,0,0.75)";
+
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.textAlign = "center";
+
+    ctx.fillStyle = "#4ade80";
+
+    ctx.font = "bold 38px Arial";
+
+    ctx.fillText(
+        title,
+        width / 2,
+        height / 2
+    );
+
+    ctx.fillStyle = "white";
+
+    ctx.font = "18px Arial";
+
+    ctx.fillText(
+        subtitle,
+        width / 2,
+        height / 2 + 40
+    );
+
+}
+
+
+// =================================
+// 10. 绘制整个游戏
+// =================================
+
+function drawGame() {
+
+    drawGrid();
+
+    drawFood();
+
+    drawSnake();
+
+    if (gameState === "menu") {
+
+        drawOverlay(
+            "SNAKE GAME",
+            "点击开始游戏"
+        );
+
+    }
+
+    if (gameState === "paused") {
+
+        drawOverlay(
+            "PAUSED",
+            "按空格键继续"
+        );
+
+    }
+
+    if (gameState === "over") {
+
+        drawOverlay(
+            "GAME OVER",
+            "最终分数：" + score
+        );
+
+    }
+
+}
+
+
+// =================================
+// 11. 开始游戏
+// =================================
+
+function startGame() {
+
+    clearInterval(gameTimer);
+
+    gameState = "playing";
+
+    resetGame();
+
+    message.textContent = "游戏开始！加油！";
+
+    updateButtons();
+
+    gameTimer = setInterval(
+        gameLoop,
+        Number(difficulty.value)
+    );
+
+}
+
+
+// =================================
+// 12. 暂停和继续
+// =================================
+
+function togglePause() {
+
+    if (gameState === "playing") {
+
+        gameState = "paused";
+
+        clearInterval(gameTimer);
+
+        message.textContent = "游戏已暂停";
+
+    }
+
+    else if (gameState === "paused") {
+
+        gameState = "playing";
+
+        gameTimer = setInterval(
+            gameLoop,
+            Number(difficulty.value)
+        );
+
+        message.textContent = "游戏继续！";
+
+    }
+
+    updateButtons();
+
+    drawGame();
+
+}
+
+
+// =================================
+// 13. 更新按钮
+// =================================
+
+function updateButtons() {
+
+    pauseButton.textContent =
+        gameState === "paused"
+            ? "继续游戏"
+            : "暂停游戏";
+
+}
+
+
+// =================================
+// 14. 键盘控制
+// =================================
+
+document.addEventListener("keydown", function(event) {
+
+    const key = event.key;
+
+    if (
+        key.startsWith("Arrow") ||
+        key === " "
+    ) {
+        event.preventDefault();
+    }
+
+    if (key === " ") {
+
+        togglePause();
+
+        return;
+
+    }
+
+    if (gameState !== "playing") return;
+
+    if (key === "ArrowUp" && direction !== "down") {
+        nextDirection = "up";
+    }
+
+    else if (key === "ArrowDown" && direction !== "up") {
+        nextDirection = "down";
+    }
+
+    else if (key === "ArrowLeft" && direction !== "right") {
+        nextDirection = "left";
+    }
+
+    else if (key === "ArrowRight" && direction !== "left") {
+        nextDirection = "right";
+    }
+
+});
+
+
+// =================================
+// 15. 蛇移动
+// =================================
+
+function moveSnake() {
+
+    direction = nextDirection;
+
+    const head = {
+        x: snake[0].x,
+        y: snake[0].y
+    };
+
+    if (direction === "up") head.y -= gridSize;
+    if (direction === "down") head.y += gridSize;
+    if (direction === "left") head.x -= gridSize;
+    if (direction === "right") head.x += gridSize;
+
+    const eatFood =
+        head.x === food.x &&
+        head.y === food.y;
+
+
+    // 检查撞墙
+
+    if (
+        head.x < 0 ||
+        head.x >= width ||
+        head.y < 0 ||
+        head.y >= height
+    ) {
+
+        endGame();
+
+        return;
+
+    }
+
+
+    // 没有吃到食物，删除蛇尾
+
+    if (!eatFood) {
+
+        snake.pop();
+
+    }
+
+
+    // 检查撞到身体
+
+    if (
+        snake.some(part =>
+            part.x === head.x &&
+            part.y === head.y
+        )
+    ) {
+
+        endGame();
+
+        return;
+
+    }
+
+
+    snake.unshift(head);
+
+
+    // 吃到食物
+
+    if (eatFood) {
+
+        score += 10;
+
+        scoreText.textContent = score;
+
+        playEatSound();
+
+        if (score > bestScore) {
+
+            bestScore = score;
+
+            bestText.textContent = bestScore;
+
+            localStorage.setItem(
+                "snakeBest",
+                bestScore
+            );
+
+        }
+
+        createFood();
+
+    }
+
+}
+
+
+// =================================
+// 16. 游戏结束
+// =================================
+
+function endGame() {
+
+    gameState = "over";
+
+    clearInterval(gameTimer);
+
+    message.textContent =
+        "游戏结束！最终得分：" + score;
+
+    playGameOverSound();
+
+    updateButtons();
+
+    drawGame();
+
+}
+
+
+// =================================
+// 17. 游戏循环
+// =================================
+
+function gameLoop() {
+
+    if (gameState !== "playing") return;
+
+    moveSnake();
+
+    if (gameState === "playing") {
+
+        drawGame();
+
+    }
+
+}
+
+
+// =================================
+// 18. 重新开始
+// =================================
+
+function restartGame() {
+
+    startGame();
+
+}
+
+
+// =================================
+// 19. 音效开关
+// =================================
+
+soundButton.addEventListener("click", function() {
+
+    soundEnabled = !soundEnabled;
+
+    soundButton.textContent =
+        soundEnabled
+            ? "🔊 音效：开启"
+            : "🔇 音效：关闭";
+
+});
+
+
+// =================================
+// 20. 绑定游戏按钮
+// =================================
+
+startButton.addEventListener("click", startGame);
+
+pauseButton.addEventListener("click", togglePause);
+
+restartButton.addEventListener("click", restartGame);
+
+
+// =================================
+// 21. 修改游戏难度
+// =================================
+
+difficulty.addEventListener("change", function() {
+
+    if (gameState === "playing") {
+
+        clearInterval(gameTimer);
+
+        gameTimer = setInterval(
+            gameLoop,
+            Number(difficulty.value)
+        );
+
+    }
+
+});
+
+
+// =================================
+// 22. 初始化
+// =================================
+
+resetGame();
+
+</script>
+
+</body>
+</html>
